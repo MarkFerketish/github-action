@@ -1,0 +1,8 @@
+{
+  "base": "azure_mgmt_monitor",
+  "spec": "azure-mgmt-monitor",
+  "files": [
+    "azure_mgmt_monitor-7.0.0-py3-none-any.whl"
+  ],
+  "ts": 1788897116.3219829
+}
