@@ -1,0 +1,8 @@
+{
+  "base": "azure_mgmt_healthbot",
+  "spec": "azure-mgmt-healthbot",
+  "files": [
+    "azure_mgmt_healthbot-1.0.0-py3-none-any.whl"
+  ],
+  "ts": 1788895943.1688075
+}
