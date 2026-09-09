@@ -6,9 +6,9 @@
 #   smoke  - as the tester, resolve+download the package from r-testing to prove it is
 #            served and indexed after staging (mirrors the pip-download smoke; no compile).
 #
-# The REST promotion steps (copy across tiers) are handled by scripts/jfrog.py, which is
+# The REST promotion steps (copy across tiers) are handled by scripts/promote.py, which is
 # package-type agnostic. Uses ONLY base R, so nothing has to be installed to run this.
-# Manifest is stored in the repo under records/manifests/ (same format jfrog.py expects).
+# Manifest is stored in the repo under records/manifests/ (same format promote.py expects).
 
 args <- commandArgs(trailingOnly = TRUE)
 cmd  <- if (length(args) >= 1) args[1] else ""
@@ -24,9 +24,10 @@ version      <- get_opt("--version")
 include_deps <- get_opt("--include-deps", "yes")
 if (!nzchar(package)) stop("--package is required")
 
-# Manifest base MUST match jfrog.py base_of() so the Python promote steps load the same file.
+# Manifest base MUST match promote.py base_of() so the Python promote steps load the same file.
 base         <- tolower(gsub("-", "_", package))
-manifest_dir <- "records/manifests"
+# Per-language manifest folder (set by the workflow); default to the R folder.
+manifest_dir <- Sys.getenv("MANIFEST_DIR", unset = "records/manifests/r")
 norm <- function(u) sub("/+$", "", u)
 
 # ------------------------------------------------------------------------ fetch

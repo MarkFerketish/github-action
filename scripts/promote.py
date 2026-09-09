@@ -17,7 +17,9 @@ ART = os.environ["ARTIFACTORY_BASE_URL"].rstrip("/")
 REMOTE_STORE = os.environ.get("SRC_CACHE_REPO", "pypi-remote-cache")
 TESTING = os.environ.get("TESTING_REPO", "pypi-testing")
 PROD    = os.environ.get("PROD_REPO", "pypi-local")
-MANIFEST_DIR = "records/manifests"
+# Manifest folder is per-language (pypi vs r) - set by each workflow so the two pipelines
+# never collide on records/manifests/<base>.json.
+MANIFEST_DIR = os.environ.get("MANIFEST_DIR", "records/manifests")
 
 # ---------------------------------------------------------------- identities
 def sess_admin():

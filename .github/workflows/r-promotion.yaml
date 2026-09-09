@@ -23,14 +23,16 @@ env:
   # rcran.R fetch/smoke use these R repo URLs directly.
   ADMIN_R_URL:  ${{ secrets.ADMIN_R_URL }}
   TESTER_R_URL: ${{ secrets.TESTER_R_URL }}
-  # jfrog.py (the shared REST promoter) reuses the curator + admin creds. ADMIN_INDEX_URL
-  # only supplies admin credentials to jfrog.py, so the R admin URL is fine here.
+  # promote.py (the shared REST promoter) reuses the curator + admin creds. ADMIN_INDEX_URL
+  # only supplies admin credentials to promote.py, so the R admin URL is fine here.
   ADMIN_INDEX_URL: ${{ secrets.ADMIN_R_URL }}
   CURATOR_TOKEN:   ${{ secrets.CURATOR_TOKEN }}
   # Point the package-agnostic promoter at the R tiers instead of the PyPI defaults.
   SRC_CACHE_REPO: r-remote-cache
   TESTING_REPO:   r-testing
   PROD_REPO:      r-local
+  # Per-language manifest folder so the pypi and R pipelines never collide.
+  MANIFEST_DIR:   records/manifests/r
   GH_TOKEN: ${{ github.token }}
   PKG:      ${{ github.event.inputs.package || github.event.client_payload.package }}
   PKG_VER:  ${{ github.event.inputs.version || github.event.client_payload.version }}
@@ -62,7 +64,7 @@ jobs:
           git commit -m "manifest: R $PKG (run ${{ github.run_id }})" || echo "no change"
           git push
       - uses: actions/upload-artifact@v4
-        with: { name: manifest, path: records/manifests }
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
       - run: gh issue comment ${{ steps.open.outputs.number }} --body "**download** ok - manifest committed."
 
   promote-test:
@@ -76,8 +78,8 @@ jobs:
       - name: Ensure requests
         run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
-        with: { name: manifest, path: records/manifests }
-      - run: python scripts/jfrog.py promote-test --package "$PKG" --version "$PKG_VER"
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
+      - run: python scripts/promote.py promote-test --package "$PKG" --version "$PKG_VER"
       - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-test** ok - staged to r-testing."
 
   smoke-test:
@@ -108,8 +110,8 @@ jobs:
       - name: Ensure requests
         run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
-        with: { name: manifest, path: records/manifests }
-      - run: python scripts/jfrog.py promote-prod --package "$PKG" --version "$PKG_VER"
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
+      - run: python scripts/promote.py promote-prod --package "$PKG" --version "$PKG_VER"
       - run: |
           gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-prod** ok - live in r-local. Closing."
           gh issue close ${{ needs.download.outputs.issue }}

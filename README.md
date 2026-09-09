@@ -4,8 +4,8 @@ Governed pipelines that move a package up three JFrog Artifactory trust tiers, w
 human approval gate before it reaches production. There are two parallel pipelines that
 share the same engine and approval gate:
 
-- **Python / PyPI** — workflow `package-promotion.yaml` (worker `scripts/jfrog.py`)
-- **R** — workflow `r-promotion.yaml` (worker `scripts/rcran.R` for fetch/smoke, reusing `scripts/jfrog.py` for the tier-to-tier copies)
+- **Python / PyPI** — workflow `pypi-promotion.yaml` (worker `scripts/promote.py`)
+- **R** — workflow `r-promotion.yaml` (worker `scripts/rcran.R` for fetch/smoke, reusing `scripts/promote.py` for the tier-to-tier copies)
 
 The Python pipeline is documented first; the [R / CRAN pipeline](#r--cran-pipeline) section
 below covers only what differs.
@@ -49,7 +49,7 @@ default), the whole install tree is promoted, so a consumer can `pip install` it
 ## How to run it
 
 ### Option A — manually from GitHub
-1. Actions -> **JFrog package promotion** -> **Run workflow**.
+1. Actions -> **JFrog PyPI promotion** -> **Run workflow**.
 2. Fill in `package` (e.g. `requests`), optional `version`, `include deps` (default **yes**),
    `allow pre-release` (default no).
 3. Click **Run workflow**.
@@ -65,7 +65,7 @@ the same pipeline with no clicks.
 
 | Stage | What it does |
 |---|---|
-| **download** | Opens an audit issue, warms `pypi-remote`, writes the file list to `records/manifests/<pkg>.json`, commits it. |
+| **download** | Opens an audit issue, warms `pypi-remote`, writes the file list to `records/manifests/pypi/<pkg>.json`, commits it. |
 | **promote-test** | Curator copies every manifest file into `pypi-testing` (server-side, no re-download). |
 | **smoke-test** | Tester `pip install`s the package from `pypi-testing` to prove it's usable. |
 | **approve** | **Pauses** for a required reviewer to approve in the `production` environment. |
@@ -81,7 +81,7 @@ Every stage comments its status on the audit issue, so the issue is the full his
 - `include deps = yes` (default) pulls the package **and its whole dependency tree**.
   This is what makes it installable from `pypi-local`.
 - The reviewer at the approval gate is approving **the package and every dependency** listed
-  in `records/manifests/<pkg>.json` — check that file to see the full set.
+  in `records/manifests/pypi/<pkg>.json` — check that file to see the full set.
 - Set `include deps = no` per run only when you deliberately want the single top-level file.
 
 ---
@@ -108,7 +108,7 @@ self-hosted label (e.g. `[self-hosted, prod]`).
 ## R / CRAN pipeline
 
 Same three-tier model and the same `production` approval gate, for R packages. It reuses
-`scripts/jfrog.py` for the package-agnostic tier-to-tier copies (pointed at the R repos via
+`scripts/promote.py` for the package-agnostic tier-to-tier copies (pointed at the R repos via
 env vars) and adds `scripts/rcran.R` for the two R-specific steps.
 
 ```
@@ -129,7 +129,7 @@ include deps), or fire a `repository_dispatch` with `event_type: r-package-added
 - **Fetch** (`rcran.R fetch`): R has no `pip download`, so the worker resolves the dependency
   closure with base R (`tools::package_dependencies`, `Depends`/`Imports`/`LinkingTo`) then
   `download.packages()` the source tarballs from `r-remote` — this warms `r-remote-cache` and
-  builds the same manifest `jfrog.py` reads. **Uses only base R**, so nothing needs installing
+  builds the same manifest `promote.py` reads. **Uses only base R**, so nothing needs installing
   (no air-gap bootstrap for R).
 - **Smoke** (`rcran.R smoke`): tester `download.packages()` from `r-testing` to prove it's
   served + indexed (mirrors the pip-download smoke; no compile). Retries a few times to absorb

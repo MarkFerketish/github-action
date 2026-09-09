@@ -1,4 +1,4 @@
-name: JFrog package promotion
+name: JFrog PyPI promotion
 
 on:
   workflow_dispatch:
@@ -24,6 +24,8 @@ env:
   ADMIN_INDEX_URL: ${{ secrets.ADMIN_INDEX_URL }}
   CURATOR_TOKEN: ${{ secrets.CURATOR_TOKEN }}
   TESTER_INDEX_URL: ${{ secrets.TESTER_INDEX_URL }}
+  # Per-language manifest folder so the pypi and R pipelines never collide.
+  MANIFEST_DIR: records/manifests/pypi
   GH_TOKEN: ${{ github.token }}
   PKG:       ${{ github.event.inputs.package || github.event.client_payload.package }}
   PKG_VER:   ${{ github.event.inputs.version || github.event.client_payload.version }}
@@ -52,7 +54,7 @@ jobs:
                 --label promotion | grep -oE '[0-9]+$')
           echo "number=$n" >> "$GITHUB_OUTPUT"
       - run: |
-          python scripts/jfrog.py download --package "$PKG" --version "$PKG_VER" \
+          python scripts/promote.py download --package "$PKG" --version "$PKG_VER" \
             --include-deps "$INC_DEPS" --allow-pre "$ALLOW_PRE"
       - name: Commit manifest
         run: |
@@ -62,7 +64,7 @@ jobs:
           git commit -m "manifest: $PKG (run ${{ github.run_id }})" || echo "no change"
           git push
       - uses: actions/upload-artifact@v4
-        with: { name: manifest, path: records/manifests }
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
       - run: gh issue comment ${{ steps.open.outputs.number }} --body "**download** ok - manifest committed."
 
   promote-test:
@@ -77,8 +79,8 @@ jobs:
       - name: Ensure requests
         run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
-        with: { name: manifest, path: records/manifests }
-      - run: python scripts/jfrog.py promote-test --package "$PKG" --version "$PKG_VER"
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
+      - run: python scripts/promote.py promote-test --package "$PKG" --version "$PKG_VER"
       - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-test** ok - staged to pypi-testing."
 
   smoke-test:
@@ -93,8 +95,8 @@ jobs:
       - name: Ensure requests
         run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
-        with: { name: manifest, path: records/manifests }
-      - run: python scripts/jfrog.py smoke --package "$PKG" --version "$PKG_VER"
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
+      - run: python scripts/promote.py smoke --package "$PKG" --version "$PKG_VER"
       - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**smoke-test** ok - tester installed from pypi-testing. Awaiting approval."
 
   approve:
@@ -116,8 +118,8 @@ jobs:
       - name: Ensure requests
         run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
-        with: { name: manifest, path: records/manifests }
-      - run: python scripts/jfrog.py promote-prod --package "$PKG" --version "$PKG_VER"
+        with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
+      - run: python scripts/promote.py promote-prod --package "$PKG" --version "$PKG_VER"
       - run: |
           gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-prod** ok - live in pypi-local. Closing."
           gh issue close ${{ needs.download.outputs.issue }}
