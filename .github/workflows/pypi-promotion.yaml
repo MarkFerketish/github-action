@@ -8,7 +8,7 @@ on:
       include_deps:     { description: "include deps", type: choice, options: [no, yes], default: yes }
       allow_prerelease: { description: "allow pre-release", type: choice, options: [no, yes], default: no }
   repository_dispatch:
-    types: [package-added]
+    types: [pypi-package-added]
 
 permissions:
   contents: write

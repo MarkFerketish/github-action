@@ -56,7 +56,7 @@ default), the whole install tree is promoted, so a consumer can `pip install` it
 
 ### Option B — automatically from Databricks
 The admin notebook does a `pip download` to warm `pypi-remote`, then fires a
-`repository_dispatch` (`event_type: package-added`) with the package details. That starts
+`repository_dispatch` (`event_type: pypi-package-added`) with the package details. That starts
 the same pipeline with no clicks.
 
 ---
