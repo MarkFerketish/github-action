@@ -1,0 +1,17 @@
+{
+  "base": "azure_mgmt_storagemover",
+  "spec": "azure-mgmt-storagemover",
+  "files": [
+    "azure_core-1.41.0-py3-none-any.whl",
+    "azure_mgmt_core-1.6.0-py3-none-any.whl",
+    "azure_mgmt_storagemover-3.1.0-py3-none-any.whl",
+    "certifi-2026.7.22-py3-none-any.whl",
+    "charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    "idna-3.19-py3-none-any.whl",
+    "isodate-0.7.2-py3-none-any.whl",
+    "requests-2.34.2-py3-none-any.whl",
+    "typing_extensions-4.16.0-py3-none-any.whl",
+    "urllib3-2.7.0-py3-none-any.whl"
+  ],
+  "ts": 1788973895.7800205
+}
