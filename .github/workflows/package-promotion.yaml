@@ -28,8 +28,10 @@ env:
   GH_TOKEN: ${{ github.token }}
   PKG:       ${{ github.event.inputs.package || github.event.client_payload.package }}
   PKG_VER:   ${{ github.event.inputs.version || github.event.client_payload.version }}
-  INC_DEPS:  ${{ github.event.inputs.include_deps || 'no' }}
-  ALLOW_PRE: ${{ github.event.inputs.allow_prerelease || 'no' }}
+  # A "full package" = the named package + ALL of its dependencies. Default yes so
+  # pypi-local receives an installable tree. Honors the notebook (repository_dispatch) payload too.
+  INC_DEPS:  ${{ github.event.inputs.include_deps || github.event.client_payload.include_deps || 'yes' }}
+  ALLOW_PRE: ${{ github.event.inputs.allow_prerelease || github.event.client_payload.allow_prerelease || 'no' }}
 
 jobs:
   download:
@@ -40,7 +42,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install requests
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image, so
+      # this installs nothing offline. On internet runners it installs on first use.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
       - id: open
         run: |
           n=$(gh issue create --title "Promote $PKG $PKG_VER" \
@@ -68,7 +73,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install requests
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image, so
+      # this installs nothing offline. On internet runners it installs on first use.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
         with: { name: manifest, path: records/manifests }
       - run: python scripts/jfrog.py promote-test --package "$PKG" --version "$PKG_VER"
@@ -81,7 +89,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install requests
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image, so
+      # this installs nothing offline. On internet runners it installs on first use.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
         with: { name: manifest, path: records/manifests }
       - run: python scripts/jfrog.py smoke --package "$PKG" --version "$PKG_VER"
@@ -101,7 +112,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install requests
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image, so
+      # this installs nothing offline. On internet runners it installs on first use.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
       - uses: actions/download-artifact@v4
         with: { name: manifest, path: records/manifests }
       - run: python scripts/jfrog.py promote-prod --package "$PKG" --version "$PKG_VER"

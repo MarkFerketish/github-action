@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """JFrog promotion pipeline helper for GitHub Actions.
 Subcommands: download, promote-test, smoke, promote-prod.
+
+A "full package" = the named package + ALL of its dependencies. With
+include-deps=yes (default) pip resolves the whole tree; every file is copied
+through each tier, so JFrog/Xray scans all of them (top-level and deps alike).
+
 Manifest (the exact file list) is stored IN the GitHub repo under records/manifests/."""
 import argparse, glob, json, os, re, subprocess, sys, time
 from urllib.parse import urlsplit, quote
@@ -90,7 +95,7 @@ def main():
     pinned = bool(re.search(r"[<>=!~]", a.package))
     spec = a.package if (pinned or not a.version) else f"{a.package}=={a.version}"
     os.environ["PKG"] = spec
-    no_deps   = a.include_deps != "yes"
+    no_deps   = a.include_deps != "yes"   # deps ON by default: promote an installable tree, not a lone wheel
     allow_pre = a.allow_pre == "yes"
 
     if a.cmd == "download":
