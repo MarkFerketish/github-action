@@ -20,11 +20,10 @@ concurrency:
 
 env:
   GH_REPO: ${{ github.repository }}
-  ART: ${{ secrets.ART }}
+  ARTIFACTORY_BASE_URL: ${{ secrets.ARTIFACTORY_BASE_URL }}
   ADMIN_INDEX_URL: ${{ secrets.ADMIN_INDEX_URL }}
   CURATOR_TOKEN: ${{ secrets.CURATOR_TOKEN }}
-  TESTER_TOKEN: ${{ secrets.TESTER_TOKEN }}
-  TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK }}
+  TESTER_INDEX_URL: ${{ secrets.TESTER_INDEX_URL }}
   GH_TOKEN: ${{ github.token }}
   PKG:       ${{ github.event.inputs.package || github.event.client_payload.package }}
   PKG_VER:   ${{ github.event.inputs.version || github.event.client_payload.version }}
@@ -122,3 +121,22 @@ jobs:
       - run: |
           gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-prod** ok - live in pypi-local. Closing."
           gh issue close ${{ needs.download.outputs.issue }}
+
+  # Fires when ANY job above fails - including a human rejecting at the production gate.
+  # Reports who rejected and their note (from the run's approvals), else a generic failure.
+  rejected:
+    needs: [download, promote-test, smoke-test, approve, promote-prod]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report rejection / failure on the audit issue
+        run: |
+          issue="${{ needs.download.outputs.issue }}"
+          if [ -z "$issue" ]; then echo "no audit issue to comment on"; exit 0; fi
+          info=$(gh api "repos/$GH_REPO/actions/runs/${{ github.run_id }}/approvals" \
+                   --jq '.[] | select(.state=="rejected") | "@\(.user.login): \(.comment // "(no note)")"' 2>/dev/null || true)
+          if [ -n "$info" ]; then
+            gh issue comment "$issue" --body "**rejected** at the production gate - $info"
+          else
+            gh issue comment "$issue" --body "**failed** - run ${{ github.run_id }} did not complete. See the Actions log."
+          fi

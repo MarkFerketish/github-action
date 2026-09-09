@@ -8,10 +8,10 @@ through each tier, so JFrog/Xray scans all of them (top-level and deps alike).
 
 Manifest (the exact file list) is stored IN the GitHub repo under records/manifests/."""
 import argparse, glob, json, os, re, subprocess, sys, time
-from urllib.parse import urlsplit, quote
+from urllib.parse import urlsplit
 import requests
 
-ART = os.environ["ART"].rstrip("/")
+ART = os.environ["ARTIFACTORY_BASE_URL"].rstrip("/")
 REMOTE_STORE = "pypi-remote-cache"
 TESTING, PROD = "pypi-testing", "pypi-local"
 MANIFEST_DIR = "records/manifests"
@@ -72,14 +72,6 @@ def run_pip_download(dest, index_url, spec, no_deps, allow_pre):
     files = sorted(os.path.basename(f) for f in glob.glob(f"{dest}/*"))
     return rc, files
 
-# ---------------------------------------------------------- optional Teams msg
-def notify(step, status, detail):
-    url = os.environ.get("TEAMS_WEBHOOK")
-    if not url: return
-    msg = f"**JFrog pipeline** `{os.environ.get('PKG','?')}` - **{step}**: {status}\n\n{detail}"
-    try: requests.post(url, json={"text": msg}, timeout=10)
-    except Exception as e: print(f"[notify] WARN {e}")
-
 # ------------------------------------------------------------------------ CLI
 def main():
     ap = argparse.ArgumentParser(); sub = ap.add_subparsers(dest="cmd", required=True)
@@ -101,10 +93,10 @@ def main():
     if a.cmd == "download":
         rc, files = run_pip_download("/tmp/dl", os.environ["ADMIN_INDEX_URL"], spec, no_deps, allow_pre)
         if rc != 0 or not files:
-            notify("download", "FAILED", f"rc={rc} files={len(files)}"); sys.exit("download failed")
+            sys.exit(f"download failed: rc={rc} files={len(files)}")
         for f in files: print("   -", f)
         manifest_save(base, spec, files)
-        notify("download", "ok", f"cached {len(files)} file(s)")
+        print(f"[download] cached {len(files)} file(s)")
 
     elif a.cmd == "promote-test":
         A, C = sess_admin(), sess_bearer(os.environ["CURATOR_TOKEN"])
@@ -117,16 +109,15 @@ def main():
                 copy(C, REMOTE_STORE, TESTING, rel); copied += 1
             A.put(f"{ART}/api/storage/{TESTING}/{rel}?properties=promote.approved=false")
         if missing:
-            notify("promote-test", "FAILED", f"{missing} file(s) missing"); sys.exit("missing files")
-        notify("promote-test", "ok", f"staged {copied} file(s)")
+            sys.exit(f"promote-test failed: {missing} file(s) missing")
+        print(f"[promote-test] staged {copied} file(s)")
 
     elif a.cmd == "smoke":
-        tok = os.environ["TESTER_TOKEN"]
-        idx = f"https://tester:{quote(tok, safe='')}@{urlsplit(ART).netloc}/artifactory/api/pypi/{TESTING}/simple"
+        idx = os.environ["TESTER_INDEX_URL"]          # full pypi-testing index, tester creds baked in
         rc, got = run_pip_download("/tmp/smoke", idx, spec, no_deps=True, allow_pre=allow_pre)
         if rc != 0:
-            notify("smoke", "FAILED", "tester could not install from pypi-testing"); sys.exit("smoke failed")
-        notify("smoke", "ok", f"tester installed {len(got)} file(s) from pypi-testing")
+            sys.exit("smoke failed: tester could not install from pypi-testing")
+        print(f"[smoke] tester installed {len(got)} file(s) from pypi-testing")
 
     elif a.cmd == "promote-prod":
         C = sess_bearer(os.environ["CURATOR_TOKEN"])
@@ -134,10 +125,10 @@ def main():
         for name in manifest_load(base):
             rel = find_by_name(C, TESTING, name)
             if not rel:
-                notify("promote-prod", "FAILED", f"{name} not in testing"); sys.exit("not staged")
+                sys.exit(f"promote-prod failed: {name} not in testing")
             if not exists(C, PROD, rel):
                 copy(C, TESTING, PROD, rel); promoted += 1
-        notify("promote-prod", "ok", f"PROMOTED {promoted} file(s) to {PROD} - live")
+        print(f"[promote-prod] PROMOTED {promoted} file(s) to {PROD} - live")
 
 if __name__ == "__main__":
     main()

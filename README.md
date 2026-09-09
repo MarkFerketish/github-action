@@ -18,13 +18,18 @@ default), the whole install tree is promoted, so a consumer can `pip install` it
 ## One-time setup
 
 1. **Repo secrets** (Settings -> Secrets and variables -> Actions):
-   | Secret | Value |
-   |---|---|
-   | `ART` | `https://<host>/artifactory` (base URL, no trailing slash) |
-   | `ADMIN_INDEX_URL` | `https://admin:<token>@<host>/artifactory/api/pypi/pypi-remote/simple` |
-   | `CURATOR_TOKEN` | curator identity token (used for server-side copies) |
-   | `TESTER_TOKEN` | tester identity token (used for the smoke install) |
-   | `TEAMS_WEBHOOK` | *(optional)* Teams incoming-webhook URL for notifications |
+
+   | Secret | Identity | Value / format |
+   |---|---|---|
+   | `ARTIFACTORY_BASE_URL` | — | `https://<host>/artifactory` (no trailing slash) |
+   | `ADMIN_INDEX_URL` | admin (pip) | `https://admin:<token>@<host>/artifactory/api/pypi/pypi-remote/simple` |
+   | `CURATOR_TOKEN` | curator (REST) | `<curator access token>` (used as a Bearer token for server-side copies) |
+   | `TESTER_INDEX_URL` | tester (pip) | `https://tester:<token>@<host>/artifactory/api/pypi/pypi-testing/simple` |
+
+   Naming rule: **pip** identities carry the repo in the URL, so they're `*_INDEX_URL`
+   (`ADMIN_INDEX_URL` -> pypi-remote, `TESTER_INDEX_URL` -> pypi-testing). The **curator**
+   works over the REST API where the repo is named in the request path, so it's just a
+   `*_TOKEN`. `<host>` is the same host as `ARTIFACTORY_BASE_URL`.
 
 2. **Environment** named `production` (Settings -> Environments):
    add yourself / the approvers under **Required reviewers**. This is what pauses the
@@ -58,6 +63,7 @@ the same pipeline with no clicks.
 | **smoke-test** | Tester `pip install`s the package from `pypi-testing` to prove it's usable. |
 | **approve** | **Pauses** for a required reviewer to approve in the `production` environment. |
 | **promote-prod** | After approval, curator copies the files into `pypi-local`, then closes the issue. |
+| **rejected** | Runs only if any stage fails — including a reviewer **rejecting** at the gate. Comments who rejected and their note (or a generic failure) on the audit issue. |
 
 Every stage comments its status on the audit issue, so the issue is the full history of the promotion.
 
