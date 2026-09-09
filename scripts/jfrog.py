@@ -12,8 +12,11 @@ from urllib.parse import urlsplit
 import requests
 
 ART = os.environ["ARTIFACTORY_BASE_URL"].rstrip("/")
-REMOTE_STORE = "pypi-remote-cache"
-TESTING, PROD = "pypi-testing", "pypi-local"
+# Repo names default to the PyPI tiers but can be overridden per-workflow (e.g. the R
+# pipeline sets these to r-remote-cache / r-testing / r-local). Promotion is package-agnostic.
+REMOTE_STORE = os.environ.get("SRC_CACHE_REPO", "pypi-remote-cache")
+TESTING = os.environ.get("TESTING_REPO", "pypi-testing")
+PROD    = os.environ.get("PROD_REPO", "pypi-local")
 MANIFEST_DIR = "records/manifests"
 
 # ---------------------------------------------------------------- identities

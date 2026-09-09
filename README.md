@@ -1,11 +1,18 @@
 # JFrog package promotion
 
-Governed pipeline that moves a Python package up three JFrog Artifactory trust tiers,
-with a human approval gate before it reaches production.
+Governed pipelines that move a package up three JFrog Artifactory trust tiers, with a
+human approval gate before it reaches production. There are two parallel pipelines that
+share the same engine and approval gate:
+
+- **Python / PyPI** — workflow `package-promotion.yaml` (worker `scripts/jfrog.py`)
+- **R** — workflow `r-promotion.yaml` (worker `scripts/rcran.R` for fetch/smoke, reusing `scripts/jfrog.py` for the tier-to-tier copies)
+
+The Python pipeline is documented first; the [R / CRAN pipeline](#r--cran-pipeline) section
+below covers only what differs.
 
 ```
 pypi-remote (raw internet proxy)  ->  pypi-testing (staged)  ->  pypi-local (approved / prod)
-        admin warms the cache          curator copies              curator copies
+        admin fetches                  curator copies              curator copies
                                         tester smoke-tests          AFTER a human approves
 ```
 
@@ -95,3 +102,40 @@ The jobs need the Python `requests` library. Each job uses:
 
 When cutting over to prod, also change each job's `runs-on: ubuntu-latest` to your
 self-hosted label (e.g. `[self-hosted, prod]`).
+
+---
+
+## R / CRAN pipeline
+
+Same three-tier model and the same `production` approval gate, for R packages. It reuses
+`scripts/jfrog.py` for the package-agnostic tier-to-tier copies (pointed at the R repos via
+env vars) and adds `scripts/rcran.R` for the two R-specific steps.
+
+```
+r-remote (CRAN proxy)  ->  r-testing (staged)  ->  r-local (approved / prod)
+```
+
+**Extra secrets** (in addition to `ARTIFACTORY_BASE_URL` and `CURATOR_TOKEN`, which are shared):
+
+| Secret | Identity | Value / format |
+|---|---|---|
+| `ADMIN_R_URL` | admin (R) | `https://admin:<token>@<host>/artifactory/r-remote` |
+| `TESTER_R_URL` | tester (R) | `https://tester:<token>@<host>/artifactory/r-testing` |
+
+**Run it:** Actions -> **JFrog R promotion** -> Run workflow (package, optional version,
+include deps), or fire a `repository_dispatch` with `event_type: r-package-added` from Databricks.
+
+**How it differs from Python**
+- **Fetch** (`rcran.R fetch`): R has no `pip download`, so the worker resolves the dependency
+  closure with base R (`tools::package_dependencies`, `Depends`/`Imports`/`LinkingTo`) then
+  `download.packages()` the source tarballs from `r-remote` — this warms `r-remote-cache` and
+  builds the same manifest `jfrog.py` reads. **Uses only base R**, so nothing needs installing
+  (no air-gap bootstrap for R).
+- **Smoke** (`rcran.R smoke`): tester `download.packages()` from `r-testing` to prove it's
+  served + indexed (mirrors the pip-download smoke; no compile). Retries a few times to absorb
+  JFrog's reindex latency.
+- **Versions:** `r-remote` serves only the latest version via `PACKAGES` (older releases live
+  under `Archive/`). A specific `version` input is recorded but the latest is fetched; pinning
+  older versions would need Archive handling (not implemented).
+- **Prod cutover:** bake **R** into the self-hosted runner image (the R jobs use base R only);
+  the Python promote jobs still need `requests` baked in as above.

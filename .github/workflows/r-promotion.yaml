@@ -1,0 +1,133 @@
+name: JFrog R promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:      { description: "R package (e.g. rlang)", required: true }
+      version:      { description: "version (optional; r-remote serves latest)", required: false, default: "" }
+      include_deps: { description: "include deps", type: choice, options: [no, yes], default: yes }
+  repository_dispatch:
+    types: [r-package-added]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: r-promote-${{ github.event.inputs.package || github.event.client_payload.package }}
+  cancel-in-progress: false
+
+env:
+  GH_REPO: ${{ github.repository }}
+  ARTIFACTORY_BASE_URL: ${{ secrets.ARTIFACTORY_BASE_URL }}
+  # rcran.R fetch/smoke use these R repo URLs directly.
+  ADMIN_R_URL:  ${{ secrets.ADMIN_R_URL }}
+  TESTER_R_URL: ${{ secrets.TESTER_R_URL }}
+  # jfrog.py (the shared REST promoter) reuses the curator + admin creds. ADMIN_INDEX_URL
+  # only supplies admin credentials to jfrog.py, so the R admin URL is fine here.
+  ADMIN_INDEX_URL: ${{ secrets.ADMIN_R_URL }}
+  CURATOR_TOKEN:   ${{ secrets.CURATOR_TOKEN }}
+  # Point the package-agnostic promoter at the R tiers instead of the PyPI defaults.
+  SRC_CACHE_REPO: r-remote-cache
+  TESTING_REPO:   r-testing
+  PROD_REPO:      r-local
+  GH_TOKEN: ${{ github.token }}
+  PKG:      ${{ github.event.inputs.package || github.event.client_payload.package }}
+  PKG_VER:  ${{ github.event.inputs.version || github.event.client_payload.version }}
+  # A "full package" = the named package + ALL of its dependency closure. Default yes so
+  # r-local receives an installable set. Honors the notebook (repository_dispatch) payload too.
+  INC_DEPS: ${{ github.event.inputs.include_deps || github.event.client_payload.include_deps || 'yes' }}
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    outputs:
+      issue: ${{ steps.open.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { r-version: "release" }
+      - id: open
+        run: |
+          n=$(gh issue create --title "Promote R $PKG $PKG_VER" \
+                --body "Run ${{ github.run_id }} by @${{ github.actor }}" \
+                --label promotion | grep -oE '[0-9]+$')
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+      - run: Rscript scripts/rcran.R fetch --package "$PKG" --version "$PKG_VER" --include-deps "$INC_DEPS"
+      - name: Commit manifest
+        run: |
+          git config user.name "pipeline-bot"
+          git config user.email "actions@github.com"
+          git add records/manifests
+          git commit -m "manifest: R $PKG (run ${{ github.run_id }})" || echo "no change"
+          git push
+      - uses: actions/upload-artifact@v4
+        with: { name: manifest, path: records/manifests }
+      - run: gh issue comment ${{ steps.open.outputs.number }} --body "**download** ok - manifest committed."
+
+  promote-test:
+    needs: download
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
+      - uses: actions/download-artifact@v4
+        with: { name: manifest, path: records/manifests }
+      - run: python scripts/jfrog.py promote-test --package "$PKG" --version "$PKG_VER"
+      - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-test** ok - staged to r-testing."
+
+  smoke-test:
+    needs: [download, promote-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with: { r-version: "release" }
+      - run: Rscript scripts/rcran.R smoke --package "$PKG" --version "$PKG_VER"
+      - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**smoke-test** ok - tester resolved from r-testing. Awaiting approval."
+
+  approve:
+    needs: [download, smoke-test]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: gh issue comment ${{ needs.download.outputs.issue }} --body "**approved** by @${{ github.actor }} - promoting to prod."
+
+  promote-prod:
+    needs: [download, approve]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Option A (air-gap): prod self-hosted runner has requests baked into its image.
+      - name: Ensure requests
+        run: python -c "import requests" 2>/dev/null || pip install requests
+      - uses: actions/download-artifact@v4
+        with: { name: manifest, path: records/manifests }
+      - run: python scripts/jfrog.py promote-prod --package "$PKG" --version "$PKG_VER"
+      - run: |
+          gh issue comment ${{ needs.download.outputs.issue }} --body "**promote-prod** ok - live in r-local. Closing."
+          gh issue close ${{ needs.download.outputs.issue }}
+
+  # Fires when ANY job above fails - including a human rejecting at the production gate.
+  rejected:
+    needs: [download, promote-test, smoke-test, approve, promote-prod]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report rejection / failure on the audit issue
+        run: |
+          issue="${{ needs.download.outputs.issue }}"
+          if [ -z "$issue" ]; then echo "no audit issue to comment on"; exit 0; fi
+          info=$(gh api "repos/$GH_REPO/actions/runs/${{ github.run_id }}/approvals" \
+                   --jq '.[] | select(.state=="rejected") | "@\(.user.login): \(.comment // "(no note)")"' 2>/dev/null || true)
+          if [ -n "$info" ]; then
+            gh issue comment "$issue" --body "**rejected** at the production gate - $info"
+          else
+            gh issue comment "$issue" --body "**failed** - run ${{ github.run_id }} did not complete. See the Actions log."
+          fi
