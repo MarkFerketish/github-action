@@ -21,11 +21,11 @@ env:
   GH_REPO: ${{ github.repository }}
   ARTIFACTORY_BASE_URL: ${{ secrets.ARTIFACTORY_BASE_URL }}
   # rcran.R fetch/smoke use these R repo URLs directly.
-  ADMIN_R_URL:  ${{ secrets.ADMIN_R_URL }}
-  TESTER_R_URL: ${{ secrets.TESTER_R_URL }}
+  ADMIN_INDEX_URL_R:  ${{ secrets.ADMIN_INDEX_URL_R }}
+  TESTER_INDEX_URL_R: ${{ secrets.TESTER_INDEX_URL_R }}
   # promote.py (the shared REST promoter) reuses the curator + admin creds. ADMIN_INDEX_URL
   # only supplies admin credentials to promote.py, so the R admin URL is fine here.
-  ADMIN_INDEX_URL: ${{ secrets.ADMIN_R_URL }}
+  ADMIN_INDEX_URL: ${{ secrets.ADMIN_INDEX_URL_R }}
   CURATOR_TOKEN:   ${{ secrets.CURATOR_TOKEN }}
   # Point the package-agnostic promoter at the R tiers instead of the PyPI defaults.
   SRC_CACHE_REPO: r-remote-cache

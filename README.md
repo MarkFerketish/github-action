@@ -119,8 +119,8 @@ r-remote (CRAN proxy)  ->  r-testing (staged)  ->  r-local (approved / prod)
 
 | Secret | Identity | Value / format |
 |---|---|---|
-| `ADMIN_R_URL` | admin (R) | `https://admin:<token>@<host>/artifactory/r-remote` |
-| `TESTER_R_URL` | tester (R) | `https://tester:<token>@<host>/artifactory/r-testing` |
+| `ADMIN_INDEX_URL_R` | admin (R) | `https://admin:<token>@<host>/artifactory/r-remote` |
+| `TESTER_INDEX_URL_R` | tester (R) | `https://tester:<token>@<host>/artifactory/r-testing` |
 
 **Run it:** Actions -> **JFrog R promotion** -> Run workflow (package, optional version,
 include deps), or fire a `repository_dispatch` with `event_type: r-package-added` from Databricks.

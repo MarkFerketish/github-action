@@ -32,8 +32,8 @@ norm <- function(u) sub("/+$", "", u)
 
 # ------------------------------------------------------------------------ fetch
 if (cmd == "fetch") {
-  admin <- norm(Sys.getenv("ADMIN_R_URL"))
-  if (!nzchar(admin)) stop("ADMIN_R_URL not set")
+  admin <- norm(Sys.getenv("ADMIN_INDEX_URL_R"))
+  if (!nzchar(admin)) stop("ADMIN_INDEX_URL_R not set")
   dest <- tempfile("dl"); dir.create(dest)
 
   # PACKAGES index off r-remote lists everything CRAN serves (proxied). Used for dep resolution.
@@ -76,8 +76,8 @@ if (cmd == "fetch") {
 
 # ------------------------------------------------------------------------ smoke
 } else if (cmd == "smoke") {
-  tester <- norm(Sys.getenv("TESTER_R_URL"))
-  if (!nzchar(tester)) stop("TESTER_R_URL not set")
+  tester <- norm(Sys.getenv("TESTER_INDEX_URL_R"))
+  if (!nzchar(tester)) stop("TESTER_INDEX_URL_R not set")
   dest <- tempfile("smoke"); dir.create(dest)
 
   # JFrog reindexes r-testing when tarballs land; allow a few retries for index latency.
