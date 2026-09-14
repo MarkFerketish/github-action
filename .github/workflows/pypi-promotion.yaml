@@ -63,8 +63,15 @@ jobs:
           git config user.name "pipeline-bot"
           git config user.email "actions@github.com"
           git add records/manifests
-          git commit -m "manifest: $PKG (run ${{ github.run_id }})" || echo "no change"
-          git push
+          git commit -m "manifest: $PKG (run ${{ github.run_id }})" || { echo "no change"; exit 0; }
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            echo "push rejected (attempt $i) - rebasing on origin/$GITHUB_REF_NAME"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            sleep $((RANDOM % 5 + 2))
+          done
+          echo "manifest push failed after 5 attempts" >&2
+          exit 1
       - uses: actions/upload-artifact@v4
         with: { name: manifest, path: "${{ env.MANIFEST_DIR }}" }
       - run: gh issue comment ${{ steps.open.outputs.number }} --body "**download** ok - manifest committed."
