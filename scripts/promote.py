@@ -61,10 +61,11 @@ def manifest_save(base, spec, files):
     run_url = f"{os.environ.get('GITHUB_SERVER_URL','https://github.com')}/{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/{os.environ.get('GITHUB_RUN_ID','')}"
     json.dump({"base": base, "spec": spec, "files": files,
                "generated_at": now.isoformat(timespec="seconds"),
-               "generated_at_human": now.strftime("%Y-%m-%d %H:%M UTC"),
+               "generated_at_friendly": now.strftime("%Y-%m-%d %H:%M UTC"),
                "run_id": os.environ.get("GITHUB_RUN_ID"),
                "commit": os.environ.get("GITHUB_SHA"),
-               "run_url": run_url},
+               "run_url": run_url,
+               "requested_by": os.environ.get("REQUESTED_BY") or os.environ.get("GITHUB_ACTOR")},
               open(f"{MANIFEST_DIR}/{base}.json", "w"), indent=2)
     print(f"[manifest] wrote {MANIFEST_DIR}/{base}.json ({len(files)} files)")
 def manifest_load(base):

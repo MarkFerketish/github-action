@@ -6,6 +6,7 @@ on:
       package:      { description: "R package (e.g. rlang)", required: true }
       version:      { description: "version (optional; r-remote serves latest)", required: false, default: "" }
       include_deps: { description: "include deps", type: choice, options: [no, yes], default: yes }
+      requested_by: { description: "who requested this (optional; notebook sends the Databricks user)", required: false, default: "" }
   repository_dispatch:
     types: [r-package-added]
 
@@ -39,6 +40,7 @@ env:
   # A "full package" = the named package + ALL of its dependency closure. Default yes so
   # r-local receives an installable set. Honors the notebook (repository_dispatch) payload too.
   INC_DEPS: ${{ github.event.inputs.include_deps || github.event.client_payload.include_deps || 'yes' }}
+  REQUESTED_BY: ${{ github.event.inputs.requested_by || github.event.client_payload.requested_by || github.actor }}
 
 jobs:
   download:
