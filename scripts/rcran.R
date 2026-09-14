@@ -66,8 +66,19 @@ if (cmd == "fetch") {
   dir.create(manifest_dir, recursive = TRUE, showWarnings = FALSE)
   esc        <- function(x) gsub('"', '\\\\"', x)
   files_json <- paste0('"', vapply(files, esc, ""), '"', collapse = ", ")
-  json <- sprintf('{\n  "base": "%s",\n  "spec": "%s",\n  "files": [%s],\n  "ts": %f\n}\n',
-                  esc(base), esc(spec), files_json, as.numeric(Sys.time()))
+  now <- Sys.time()
+  generated_at <- paste0(format(now, "%Y-%m-%dT%H:%M:%S", tz = "UTC"), "+00:00")
+  generated_at_friendly <- format(now, "%Y-%m-%d %H:%M UTC", tz = "UTC")
+  run_id   <- Sys.getenv("GITHUB_RUN_ID")
+  commit   <- Sys.getenv("GITHUB_SHA")
+  server   <- Sys.getenv("GITHUB_SERVER_URL", unset = "https://github.com")
+  gh_repo  <- Sys.getenv("GITHUB_REPOSITORY")
+  run_url  <- sprintf("%s/%s/actions/runs/%s", server, gh_repo, run_id)
+  requested_by <- Sys.getenv("REQUESTED_BY")
+  json <- sprintf('{\n  "base": "%s",\n  "spec": "%s",\n  "files": [%s],\n  "generated_at": "%s",\n  "generated_at_friendly": "%s",\n  "run_id": "%s",\n  "commit": "%s",\n  "run_url": "%s",\n  "requested_by": "%s"\n}\n',
+                  esc(base), esc(spec), files_json,
+                  esc(generated_at), esc(generated_at_friendly), esc(run_id),
+                  esc(commit), esc(run_url), esc(requested_by))
   writeLines(json, file.path(manifest_dir, paste0(base, ".json")))
 
   cat(sprintf("[fetch] r-remote fetched %d file(s) for %s (deps=%s)\n",
