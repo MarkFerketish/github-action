@@ -64,7 +64,8 @@ def manifest_save(base, spec, files):
                "generated_at_friendly": now.strftime("%Y-%m-%d %H:%M UTC"),
                "run_id": os.environ.get("GITHUB_RUN_ID"),
                "commit": os.environ.get("GITHUB_SHA"),
-               "run_url": run_url},
+               "run_url": run_url,
+               "requested_by": os.environ.get("REQUESTED_BY") or os.environ.get("GITHUB_ACTOR")},
               open(f"{MANIFEST_DIR}/{base}.json", "w"), indent=2)
     print(f"[manifest] wrote {MANIFEST_DIR}/{base}.json ({len(files)} files)")
 def manifest_load(base):
