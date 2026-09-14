@@ -7,7 +7,7 @@ include-deps=yes (default) pip resolves the whole tree; every file is copied
 through each tier, so JFrog/Xray scans all of them (top-level and deps alike).
 
 Manifest (the exact file list) is stored IN the GitHub repo under records/manifests/."""
-import argparse, glob, json, os, re, subprocess, sys
+import argparse, glob, hashlib, json, os, re, subprocess, sys
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import requests
@@ -55,7 +55,7 @@ def copy(s, src, dst, rel):
     print(f"[copy] {src}/{rel} -> {dst}/{rel} OK")
 
 # ------------------------------------------------------- manifest (in GitHub)
-def manifest_save(base, spec, files):
+def manifest_save(base, spec, files, file_hashes=None):
     os.makedirs(MANIFEST_DIR, exist_ok=True)
     now = datetime.now(timezone.utc)
     run_url = f"{os.environ.get('GITHUB_SERVER_URL','https://github.com')}/{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/{os.environ.get('GITHUB_RUN_ID','')}"
@@ -65,7 +65,8 @@ def manifest_save(base, spec, files):
                "run_id": os.environ.get("GITHUB_RUN_ID"),
                "commit": os.environ.get("GITHUB_SHA"),
                "run_url": run_url,
-               "requested_by": os.environ.get("REQUESTED_BY") or os.environ.get("GITHUB_ACTOR")},
+               "requested_by": os.environ.get("REQUESTED_BY") or os.environ.get("GITHUB_ACTOR"),
+               "file_hashes": file_hashes or {}},
               open(f"{MANIFEST_DIR}/{base}.json", "w"), indent=2)
     print(f"[manifest] wrote {MANIFEST_DIR}/{base}.json ({len(files)} files)")
 def manifest_load(base):
@@ -85,6 +86,79 @@ def run_pip_download(dest, index_url, spec, no_deps, allow_pre):
     rc = subprocess.call(cmd, env=env)
     files = sorted(os.path.basename(f) for f in glob.glob(f"{dest}/*"))
     return rc, files
+
+# --------------------------------------------------------------- sha256 pin
+def sha256_dir(dest, files):
+    """Compute sha256 of every downloaded file -> {filename: hexdigest}."""
+    out = {}
+    for name in files:
+        h = hashlib.sha256()
+        with open(os.path.join(dest, name), "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        out[name] = h.hexdigest()
+    return out
+
+def _canon(name):
+    return re.sub(r"[-_.]+", "-", name).strip().lower()
+
+def _parse_artifact(fname):
+    """Return (canonical_project_name, version) for a wheel/sdist filename, else (None, None)."""
+    try:
+        from packaging.utils import (canonicalize_name, parse_wheel_filename,
+                                      parse_sdist_filename)
+        if fname.endswith(".whl"):
+            n, v, _, _ = parse_wheel_filename(fname); return canonicalize_name(n), str(v)
+        if fname.endswith((".tar.gz", ".zip", ".tar.bz2")):
+            n, v = parse_sdist_filename(fname); return canonicalize_name(n), str(v)
+    except Exception:
+        pass
+    if fname.endswith(".whl"):                                     # regex fallback
+        m = re.match(r"^(?P<n>.+?)-(?P<v>[^-]+)(?:-\d[^-]*)?-.+-.+-.+\.whl$", fname)
+        if m: return _canon(m.group("n")), m.group("v")
+    m = re.match(r"^(?P<n>.+)-(?P<v>[^-]+)\.(?:tar\.gz|zip|tar\.bz2)$", fname)
+    if m: return _canon(m.group("n")), m.group("v")
+    return None, None
+
+def pypi_release_hashes(base, version):
+    """Set of published sha256 digests for {base}=={version}, or None if metadata unavailable."""
+    url = f"https://pypi.org/pypi/{base}/{version}/json"
+    for attempt in range(3):
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                return {u.get("digests", {}).get("sha256")
+                        for u in r.json().get("urls", [])
+                        if u.get("digests", {}).get("sha256")}
+            if r.status_code == 404:
+                print(f"[hash] WARN PyPI 404 for {base}=={version}"); return None
+            print(f"[hash] WARN PyPI [{r.status_code}] for {base}=={version} (attempt {attempt+1})")
+        except requests.RequestException as e:
+            print(f"[hash] WARN PyPI fetch attempt {attempt+1} failed: {e}")
+    return None
+
+def verify_top_level_hashes(base, files, file_hashes):
+    """Validate top-level artifact(s) against PyPI-published sha256. Fail-closed on a real
+    mismatch; fail-open only when PyPI metadata cannot be fetched (air-gap/404)."""
+    canon_base = _canon(base)
+    top = [(name, ver) for name in files
+           for (pn, ver) in [_parse_artifact(name)]
+           if pn is not None and _canon(pn) == canon_base]
+    if not top:
+        print(f"[hash] WARN no top-level artifact matched {base}; skipping validation"); return
+    actual_version = next((v for _, v in top if v), None)
+    if not actual_version:
+        print(f"[hash] WARN could not determine version for {base}; skipping validation"); return
+    published = pypi_release_hashes(base, actual_version)
+    if published is None:
+        print(f"[hash] WARN PyPI metadata unavailable for {base}=={actual_version}; "
+              f"skipping hash validation (fail-open)"); return
+    for name, _ in top:
+        got = file_hashes[name]
+        if got not in published:
+            sys.exit(f"[hash] FAIL {name} sha256 {got} did not match any PyPI-published "
+                     f"hash for {base}=={actual_version}")
+        print(f"[hash] OK {name} verified against PyPI ({base}=={actual_version})")
 
 # ------------------------------------------------------------------------ CLI
 def main():
@@ -109,7 +183,12 @@ def main():
         if rc != 0 or not files:
             sys.exit(f"download failed: rc={rc} files={len(files)}")
         for f in files: print("   -", f)
-        manifest_save(base, spec, files)
+        file_hashes = sha256_dir("/tmp/dl", files)
+        if os.environ.get("VERIFY_HASHES", "yes") == "yes":
+            verify_top_level_hashes(base, files, file_hashes)
+        else:
+            print("[hash] VERIFY_HASHES=no - recording hashes without validation")
+        manifest_save(base, spec, files, file_hashes)
         print(f"[download] cached {len(files)} file(s)")
 
     elif a.cmd == "promote-test":
