@@ -1,0 +1,20 @@
+{
+  "base": "azure_keyvault_administration",
+  "spec": "azure-keyvault-administration",
+  "files": [
+    "azure_core-1.41.0-py3-none-any.whl",
+    "azure_keyvault_administration-4.7.1-py3-none-any.whl",
+    "certifi-2026.7.22-py3-none-any.whl",
+    "charset_normalizer-3.5.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+    "idna-3.19-py3-none-any.whl",
+    "isodate-0.7.2-py3-none-any.whl",
+    "requests-2.34.2-py3-none-any.whl",
+    "typing_extensions-4.16.0-py3-none-any.whl",
+    "urllib3-2.7.0-py3-none-any.whl"
+  ],
+  "generated_at": "2026-09-14T15:22:50+00:00",
+  "generated_at_human": "2026-09-14 15:22 UTC",
+  "run_id": "34861741074",
+  "commit": "00285914a3b5c1803ccc8cd2317aeb302d25e5b1",
+  "run_url": "https://github.com/MarkFerketish/github-action/actions/runs/34861741074"
+}
