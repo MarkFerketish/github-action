@@ -7,7 +7,8 @@ include-deps=yes (default) pip resolves the whole tree; every file is copied
 through each tier, so JFrog/Xray scans all of them (top-level and deps alike).
 
 Manifest (the exact file list) is stored IN the GitHub repo under records/manifests/."""
-import argparse, glob, json, os, re, subprocess, sys, time
+import argparse, glob, json, os, re, subprocess, sys
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import requests
 
@@ -56,7 +57,14 @@ def copy(s, src, dst, rel):
 # ------------------------------------------------------- manifest (in GitHub)
 def manifest_save(base, spec, files):
     os.makedirs(MANIFEST_DIR, exist_ok=True)
-    json.dump({"base": base, "spec": spec, "files": files, "ts": time.time()},
+    now = datetime.now(timezone.utc)
+    run_url = f"{os.environ.get('GITHUB_SERVER_URL','https://github.com')}/{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/{os.environ.get('GITHUB_RUN_ID','')}"
+    json.dump({"base": base, "spec": spec, "files": files,
+               "generated_at": now.isoformat(timespec="seconds"),
+               "generated_at_human": now.strftime("%Y-%m-%d %H:%M UTC"),
+               "run_id": os.environ.get("GITHUB_RUN_ID"),
+               "commit": os.environ.get("GITHUB_SHA"),
+               "run_url": run_url},
               open(f"{MANIFEST_DIR}/{base}.json", "w"), indent=2)
     print(f"[manifest] wrote {MANIFEST_DIR}/{base}.json ({len(files)} files)")
 def manifest_load(base):
