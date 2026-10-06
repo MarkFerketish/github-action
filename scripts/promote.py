@@ -83,9 +83,58 @@ def run_pip_download(dest, index_url, spec, no_deps, allow_pre):
     if allow_pre: cmd.append("--pre")
     cmd.append(spec)
     env = {**os.environ, "PIP_INDEX_URL": index_url}          # creds via env, not argv
-    rc = subprocess.call(cmd, env=env)
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    if r.stdout: sys.stdout.write(r.stdout)                   # keep pip output in the Actions log
+    if r.stderr: sys.stderr.write(r.stderr)
     files = sorted(os.path.basename(f) for f in glob.glob(f"{dest}/*"))
-    return rc, files
+    return r.returncode, files, (r.stdout or "") + (r.stderr or "")
+
+# ----------------------------------------------------------- policy block why
+def probe_block_reason(spec):
+    """pip masks the curated remote's HTTP 403 as 'No matching distribution found', so the
+    real policy/reason only lives in the raw 403 body. Re-fetch the simple index directly to
+    read it. NOTE: a smart remote needs `artifactory.xray.remote.validation=true` on the
+    Artifactory side for the 403+message to propagate - otherwise it may turn into a 404 and
+    hide the reason (not handled here). Returns {gate, policy, reason, raw} or None."""
+    u = urlsplit(os.environ["ADMIN_INDEX_URL"])
+    root = f"{u.scheme}://{u.hostname}" + (f":{u.port}" if u.port else "") + u.path.rstrip("/")
+    try:
+        r = requests.get(f"{root}/{base_of(spec)}/", auth=(u.username, u.password), timeout=30)
+    except requests.RequestException:
+        return None
+    if r.status_code != 403:
+        return None
+    body = r.text or ""
+    low = body.lower()
+    if re.search(r"xray|download blocking|blocking policy", low): gate = "Xray"
+    elif "curat" in low:                                         gate = "Curation"
+    else:                                                        gate = "policy"
+    policy = reason = None
+    try:
+        j = r.json()
+        policy = j.get("policy")
+        reason = j.get("reason") or j.get("message")
+        if not reason:
+            errs = j.get("errors")
+            if isinstance(errs, list) and errs:
+                reason = errs[0].get("message")
+    except ValueError:
+        pass
+    if not reason:
+        reason = body.strip()[:400]
+    return {"gate": gate, "policy": policy, "reason": reason, "raw": body}
+
+def write_reason(info):
+    """Surface the block reason on the run summary and a local file the workflow can post."""
+    md = (f"### ❌ Blocked by JFrog {info['gate']}\n\n"
+          f"- **Package:** {os.environ.get('PKG','?')}\n"
+          f"- **Policy:** {info.get('policy') or 'n/a'}\n"
+          f"- **Reason:** {info.get('reason') or 'n/a'}\n")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as fh: fh.write(md + "\n")
+    with open("block_reason.md", "w") as fh: fh.write(md)
+    print(md)
 
 # --------------------------------------------------------------- sha256 pin
 def sha256_dir(dest, files):
@@ -179,8 +228,12 @@ def main():
     allow_pre = a.allow_pre == "yes"
 
     if a.cmd == "download":
-        rc, files = run_pip_download("/tmp/dl", os.environ["ADMIN_INDEX_URL"], spec, no_deps, allow_pre)
+        rc, files, _ = run_pip_download("/tmp/dl", os.environ["ADMIN_INDEX_URL"], spec, no_deps, allow_pre)
         if rc != 0 or not files:
+            info = probe_block_reason(spec)
+            if info:
+                write_reason(info)
+                sys.exit(f"BLOCKED by {info['gate']}: {info.get('policy') or ''} {info.get('reason') or ''}".rstrip())
             sys.exit(f"download failed: rc={rc} files={len(files)}")
         for f in files: print("   -", f)
         file_hashes = sha256_dir("/tmp/dl", files)
@@ -207,7 +260,7 @@ def main():
 
     elif a.cmd == "smoke":
         idx = os.environ["TESTER_INDEX_URL"]          # full pypi-testing index, tester creds baked in
-        rc, got = run_pip_download("/tmp/smoke", idx, spec, no_deps=True, allow_pre=allow_pre)
+        rc, got, _ = run_pip_download("/tmp/smoke", idx, spec, no_deps=True, allow_pre=allow_pre)
         if rc != 0:
             sys.exit("smoke failed: tester could not install from pypi-testing")
         print(f"[smoke] tester installed {len(got)} file(s) from pypi-testing")
